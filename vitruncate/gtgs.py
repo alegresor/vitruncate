@@ -1,6 +1,6 @@
 from qmcpy import Sobol
 from numpy import *
-from numpy.linalg import inv
+from numpy.linalg import inv,det
 from scipy import stats
 
 def trunc_gen(x_stdu, lb, ub, distrib, independent=True, **params):
@@ -54,7 +54,7 @@ class GTGS(object):
         self.n = n
         self.d = d
         self.mu = mu.reshape((-1,1))
-        self.Sigma_norm = Sigma.max() # normalization factor
+        self.Sigma_norm = det(Sigma) # normalization factor
         self.Sigma = Sigma/self.Sigma_norm
         self.B = (vstack((L.flatten(),U.flatten()))-self.mu.T)/sqrt(self.Sigma_norm) # 2 x d array of bounds
         self.epsilon = epsilon
@@ -106,7 +106,7 @@ class GTGS(object):
         """
         t = zeros((self.n,self.n),dtype=float)
         for i in range(self.n):
-            for j in range(self.n):
+            for j in range(i):
                 t[i,j] = 2*self.k_rbf_curr[i,j]*(z[j,:]-x[i,:]).sum()/self.h
         t -= t.T
         return t

@@ -77,9 +77,9 @@ def plt_gtgs():
     Sigma = array([[9,4],[4,5]],dtype=float)
     L = array([-4,-3],dtype=float)
     U = array([6,6],dtype=float)
-    epsilon = 1
-    walk1 = 3
-    walk2 = 3
+    epsilon = .005
+    walk1 = 25
+    walk2 = 25
     # points
     #    1
     evals,evecs = linalg.eigh(Sigma)
