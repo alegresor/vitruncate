@@ -77,9 +77,11 @@ def plt_gtgs():
     Sigma = array([[9,4],[4,5]],dtype=float)
     L = array([-4,-3],dtype=float)
     U = array([6,6],dtype=float)
-    epsilon = .005
-    walk1 = 25
-    walk2 = 25
+    #L = array([-inf,-inf],dtype=float)
+    #U = array([inf,inf],dtype=float)
+    epsilon = .01
+    walk1 = 50
+    walk2 = 50
     # points
     #    1
     evals,evecs = linalg.eigh(Sigma)
@@ -89,7 +91,7 @@ def plt_gtgs():
     u = s.gen_samples(2**8)
     x = stats.norm.ppf(u)@A+mu
     #    2
-    gtgs = GTGS(2**8,2,mu,Sigma,L,U,epsilon,seed=7)
+    gtgs = GTGS(2**8,2,mu,Sigma,L,U,epsilon)
     x_init = gtgs.get_curr_x()
     #    3
     xw1 = gtgs.walk(walk1)

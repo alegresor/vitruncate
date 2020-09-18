@@ -2,3 +2,4 @@
 references/*
 _ags*
 *.pyc
+*settings.json

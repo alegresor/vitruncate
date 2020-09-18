@@ -69,7 +69,7 @@ class GTGS(object):
             scale = sqrt(self.Sigma.diagonal()))
         self.x_init = x_init
         self.x = x_init
-        self.h = 5
+        self.h = 10
     def k_rbf(self, x, z): 
         """
         RBF Kernel
@@ -155,7 +155,8 @@ class GTGS(object):
         Return:
             ndarray: current samples.
         """
-        self.x += self.epsilon*self.phiHatStar(self.x)
+        phs = self.phiHatStar(self.x)
+        self.x += self.epsilon*phs
         return self.get_curr_x()
     def walk(self, steps):
         """
