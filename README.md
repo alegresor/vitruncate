@@ -7,7 +7,8 @@ Using variational inference to generate samples from truncated distributions.
 
 Based on **[1]**. 
 
-Algorithm 1 of the above paper wants us to compute:$$\hat{\phi}^*(\boldsymbol{z})=\frac{1}{n}\sum_{i=1}^n\left[k(\boldsymbol{x}_i,\boldsymbol{z})\nabla_{\boldsymbol{x}_i}\log(p(\boldsymbol{x}_i))+\nabla_{\boldsymbol{x}_i} k(\boldsymbol{x}_i,\boldsymbol{z})\right]$$
+Algorithm 1 of the above paper wants us to compute: 
+$$\hat{\phi}^*(\boldsymbol{z})=\frac{1}{n}\sum_{i=1}^n\left[k(\boldsymbol{x}_i,\boldsymbol{z})\nabla_{\boldsymbol{x}_i}\log(p(\boldsymbol{x}_i))+\nabla_{\boldsymbol{x}_i} k(\boldsymbol{x}_i,\boldsymbol{z})\right]$$
 
 Assume we are using the [RBF kernel](https://en.wikipedia.org/wiki/Radial_basis_function_kernel)
 $$k(\boldsymbol{x},\boldsymbol{z})=\exp(-\lVert \boldsymbol{z}-\boldsymbol{x} \rVert^2 /h)$$

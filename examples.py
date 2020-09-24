@@ -79,9 +79,9 @@ def plt_gtgs():
     U = array([6,6],dtype=float)
     #L = array([-inf,-inf],dtype=float)
     #U = array([inf,inf],dtype=float)
-    epsilon = .01
-    walk1 = 50
-    walk2 = 50
+    epsilon = 1e-3
+    walk1 = 1000
+    walk2 = 1000
     # points
     #    1
     evals,evecs = linalg.eigh(Sigma)
@@ -92,11 +92,13 @@ def plt_gtgs():
     x = stats.norm.ppf(u)@A+mu
     #    2
     gtgs = GTGS(2**8,2,mu,Sigma,L,U,epsilon)
-    x_init = gtgs.get_curr_x()
+    x_init = gtgs.get_val()
     #    3
     xw1 = gtgs.walk(walk1)
+    print('Walk 1 mean:',xw1.mean(0))
     #    4
     xw2 = gtgs.walk(walk2)
+    print('Walk 2 mean:',xw2.mean(0))
     # plots
     fig,ax = pyplot.subplots(nrows=1,ncols=4,figsize=(25,5))
     scat_plot(x,ax[0],[-7,9],[-5,9],s=10,color='b',title="Sample of Points Before Truncation")

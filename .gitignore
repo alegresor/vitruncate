@@ -3,3 +3,4 @@ references/*
 _ags*
 *.pyc
 *settings.json
+Stein-Variational-Gradient-Descent/*

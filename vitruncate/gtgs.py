@@ -1,6 +1,7 @@
 from qmcpy import Sobol
 from numpy import *
 from numpy.linalg import inv,det
+from scipy.spatial.distance import pdist,squareform
 from scipy import stats
 
 def trunc_gen(x_stdu, lb, ub, distrib, independent=True, **params):
@@ -38,8 +39,11 @@ def trunc_gen(x_stdu, lb, ub, distrib, independent=True, **params):
         return -1
         
 class GTGS(object):
-    """ Gaussian Truncated Distribution Generator by Stein Method"""
-    def __init__(self, n, d, mu, Sigma, L, U, epsilon, seed=None):
+    """
+    Gaussian Truncated Distribution Generator by Stein Method.
+    Code adapted from: https://github.com/DartML/Stein-Variational-Gradient-Descent/blob/master/python/svgd.py
+    """
+    def __init__(self, n, d, mu, Sigma, L, U, epsilon, alpha=.9, seed=None):
         """
         Args:
             n (int): number of samples
@@ -49,6 +53,7 @@ class GTGS(object):
             L (ndarray): length d vector of lower bounds
             U (ndarray): length d vector of upper bounds
             epsilon (ndarray): step size
+            alpha (float): momentum of adaptive gradient
             seed (int): seed for reproducibility
         """
         self.n = n
@@ -56,8 +61,10 @@ class GTGS(object):
         self.mu = mu.reshape((-1,1))
         self.Sigma_norm = det(Sigma) # normalization factor
         self.Sigma = Sigma/self.Sigma_norm
+        self.invSigma = inv(self.Sigma)
         self.B = (vstack((L.flatten(),U.flatten()))-self.mu.T)/sqrt(self.Sigma_norm) # 2 x d array of bounds
         self.epsilon = epsilon
+        self.alpha = alpha
         ss = Sobol(d,seed=seed).gen_samples(self.n) # Sobol' samples from QMCPy. Could be replaced with IID samples
         x_init = trunc_gen(
             x_stdu = ss,
@@ -69,105 +76,65 @@ class GTGS(object):
             scale = sqrt(self.Sigma.diagonal()))
         self.x_init = x_init
         self.x = x_init
-        self.h = 10
-    def k_rbf(self, x, z): 
-        """
-        RBF Kernel
-        
-        Args:
-            x (ndarray): n x d array of current samples
-            z (ndarray): n x d array of update samples
-        
-        Return: 
-            ndarray: n x n array of samples.
-                - ndarray_{i,j} = k(x_i,z_j). 
-                - For RBF Kernel the ndarray is symmetric
-                - For RBF Kernel the diagnol is 1.
-        """
-        t = zeros((self.n,self.n),dtype=float)
+        self.fudge = 1e-6
+        self.iter = 0
+        self.hgrad = zeros((self.n,self.d),dtype=float)
+    def _k_rbf(self, x):
+        pairwise_dists = squareform(pdist(x))**2
+        h = sqrt(.5*median(pairwise_dists)/log(self.n+1))
+        Kxy = exp(-pairwise_dists/(2*h**2))
+        dxkxy = -1*(Kxy@x)
+        sumkxy = Kxy.sum(1)
+        for i in range(self.d):
+            dxkxy[:, i] = dxkxy[:,i]+(x[:,i]@sumkxy)
+        dxkxy = dxkxy/(h**2)
+        return Kxy,dxkxy
+    def _dlogpgt(self, x):
+        valid = (x>self.B[0,:]).all(1)&(x<self.B[1,:]).all(1)
+        t = -(x@self.invSigma)#*valid[:,None]
+        return t
+    def _phiHatStar(self, x):
+        lnpgrad = self._dlogpgt(self.x)
+        kxy,dxkxy = self._k_rbf(self.x)  
+        grad = ((kxy@lnpgrad)+dxkxy)/self.n
+        return grad
+    '''
+    def _k_rbf(self, x, z): 
+        h = 5
+        k = zeros((self.n,self.n),dtype=float)
+        dk = zeros((self.n,self.n),dtype=float)
         for i in range(self.n):
             for j in range(i):
-                t[i,j] = exp(((z[j,:]-x[i,:])**2).sum()/self.h)
-        t += t.T
-        t += ones(self.n)
-        return t
-    def dk_rbf(self, x, z):
-        """
-        Derivitive of RBF Kernel
-        
-        Args:
-            x (ndarray): current samples
-            z (ndarray): n x d array of update samples
-        Return: 
-            ndarray: n x n array of samples.
-                - ndarray_{i,j} = d(k(x_i,z_j)) / (d x_i). 
-                - For RBF Kernel the ndarray is a skew symmetric
-                - For RBF Kernel the diagnol is 0.
-        """
-        t = zeros((self.n,self.n),dtype=float)
-        for i in range(self.n):
-            for j in range(i):
-                t[i,j] = 2*self.k_rbf_curr[i,j]*(z[j,:]-x[i,:]).sum()/self.h
-        t -= t.T
-        return t
-    def dlogpgt(self, x):
-        """
-        Derivitive of log of probability for truncated Gaussian
-        
-        Args:
-            x (ndarray): n x d array of current samples
-        
-        Return:
-            ndarray: n x d array of derivitives
-        """
+                dist = z[j,:]-x[i,:]
+                k[i,j] = exp((dist**2).sum()/h)
+                dk[i,j] = 2*k[i,j]*dist.sum()/h
+        k += k.T + diag(ones(self.n)) # symmetric with ones along the diagnol
+        dk -= dk.T # skew matrix with zeros along the diagnol
+        return k,dk
+    def _dlnpgt(self, x):
         valid = (x>self.B[0,:]).all(1)&(x<self.B[1,:]).all(1)
         t = - x@inv(self.Sigma)*valid[:,None]
         return t
-    def phiHatStar(self, z):
-        """
-        Get the update direction.
-        
-        Args:
-            z (ndarray): n x d array of samples to update.
-        
-        Return:
-            ndarray: n x d array of update directions.
-        """
-        self.k_rbf_curr = self.k_rbf(self.x,z)
-        self.dlogpgt_curr = self.dlogpgt(self.x)
-        self.dk_rbf_curr = self.dk_rbf(self.x,z)
+    def _phiHatStar(self, z):
+        k,dk = self._k_rbf(self.x,z)
+        dlnp = self._dlnpgt(self.x)
         t = zeros((self.n,self.d),dtype=float)
         for i in range(self.n):
-            t[i,:] = (self.k_rbf_curr[:,i,None]*self.dlogpgt_curr+self.dk_rbf_curr[:,i,None]).mean(0)
+            t[i,:] = (k[:,i,None]*dlnp+dk[:,i,None]).mean(0)
         return t
-    def get_curr_x(self):
-        """
-        Get the current samples.
-        
-        Return: 
-            ndarray: n x d array of current samples.
-        """
-        return self.x*sqrt(self.Sigma_norm)+self.mu.T
-    def step(self):
-        """
-        Step the samples in the update direction. 
-        
-        Return:
-            ndarray: current samples.
-        """
-        phs = self.phiHatStar(self.x)
-        self.x += self.epsilon*phs
-        return self.get_curr_x()
+    '''
+    def _step(self):
+        grad = self._phiHatStar(self.x)
+        if self.iter==0:
+            self.hgrad += grad**2
+        else:
+            self.hgrad = self.alpha*self.hgrad+(1-self.alpha)*(grad**2)
+        adj_grad = grad/(self.fudge+sqrt(self.hgrad))
+        self.x += self.epsilon*adj_grad 
+        self.iter += 1
     def walk(self, steps):
-        """
-        Take multiple update steps. 
-        
-        Args:
-            steps (int): number of times to call step. 
-        
-        Return: 
-            ndarray: current samples. 
-        """
         for i in range(steps):
-            self.step()
-        return self.get_curr_x()
+            self._step()
+        return self.get_val()
+    def get_val(self):
+        return self.x*sqrt(self.Sigma_norm)+self.mu.T
