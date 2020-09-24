@@ -79,62 +79,33 @@ class GTGS(object):
         self.fudge = 1e-6
         self.iter = 0
         self.hgrad = zeros((self.n,self.d),dtype=float)
-    def _k_rbf(self, x):
-        pairwise_dists = squareform(pdist(x))**2
-        h = sqrt(.5*median(pairwise_dists)/log(self.n+1))
-        Kxy = exp(-pairwise_dists/(2*h**2))
-        dxkxy = -1*(Kxy@x)
-        sumkxy = Kxy.sum(1)
-        for i in range(self.d):
-            dxkxy[:, i] = dxkxy[:,i]+(x[:,i]@sumkxy)
-        dxkxy = dxkxy/(h**2)
-        return Kxy,dxkxy
     def _dlogpgt(self, x):
         valid = (x>self.B[0,:]).all(1)&(x<self.B[1,:]).all(1)
-        t = -(x@self.invSigma)#*valid[:,None]
+        t = -(x@self.invSigma)*valid[:,None]
         return t
-    def _phiHatStar(self, x):
-        lnpgrad = self._dlogpgt(self.x)
-        kxy,dxkxy = self._k_rbf(self.x)  
-        grad = ((kxy@lnpgrad)+dxkxy)/self.n
-        return grad
-    '''
-    def _k_rbf(self, x, z): 
-        h = 5
-        k = zeros((self.n,self.n),dtype=float)
-        dk = zeros((self.n,self.n),dtype=float)
-        for i in range(self.n):
-            for j in range(i):
-                dist = z[j,:]-x[i,:]
-                k[i,j] = exp((dist**2).sum()/h)
-                dk[i,j] = 2*k[i,j]*dist.sum()/h
-        k += k.T + diag(ones(self.n)) # symmetric with ones along the diagnol
-        dk -= dk.T # skew matrix with zeros along the diagnol
-        return k,dk
-    def _dlnpgt(self, x):
-        valid = (x>self.B[0,:]).all(1)&(x<self.B[1,:]).all(1)
-        t = - x@inv(self.Sigma)*valid[:,None]
-        return t
-    def _phiHatStar(self, z):
-        k,dk = self._k_rbf(self.x,z)
-        dlnp = self._dlnpgt(self.x)
-        t = zeros((self.n,self.d),dtype=float)
-        for i in range(self.n):
-            t[i,:] = (k[:,i,None]*dlnp+dk[:,i,None]).mean(0)
-        return t
-    '''
-    def _step(self):
-        grad = self._phiHatStar(self.x)
-        if self.iter==0:
-            self.hgrad += grad**2
-        else:
-            self.hgrad = self.alpha*self.hgrad+(1-self.alpha)*(grad**2)
-        adj_grad = grad/(self.fudge+sqrt(self.hgrad))
-        self.x += self.epsilon*adj_grad 
-        self.iter += 1
+    def _k_rbf(self, x):
+        pairwise_dists = squareform(pdist(x))**2
+        h = median(pairwise_dists)  
+        h = sqrt(.5*h/log(self.n+1))
+        Kxy = exp(-pairwise_dists/(2*h**2))
+        dxkxy = -Kxy@x
+        sumkxy = Kxy.sum(1)
+        for i in range(self.d):
+            dxkxy[:,i] = dxkxy[:,i]+x[:,i]*sumkxy
+        dxkxy = dxkxy/(h**2)
+        return Kxy,dxkxy 
     def walk(self, steps):
         for i in range(steps):
-            self._step()
+            lnpgrad = self._dlogpgt(self.x)
+            kxy,dxkxy = self._k_rbf(self.x)  
+            grad = ((kxy@lnpgrad)+dxkxy)/self.n  
+            if self.iter== 0:
+                self.hgrad = self.hgrad+grad**2
+            else:
+                self.hgrad = self.alpha*self.hgrad+(1-self.alpha)*(grad**2)
+            adj_grad = grad/(self.fudge+sqrt(self.hgrad))
+            self.x += self.epsilon*adj_grad 
+            self.iter += 1
         return self.get_val()
     def get_val(self):
         return self.x*sqrt(self.Sigma_norm)+self.mu.T
