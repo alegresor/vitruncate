@@ -1,1 +1,1 @@
-from .gtgs import GTGS,trunc_gen
+from .gtgs import GTGS
