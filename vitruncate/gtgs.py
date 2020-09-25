@@ -80,8 +80,11 @@ class GTGS(object):
         self.iter = 0
         self.hgrad = zeros((self.n,self.d),dtype=float)
     def _dlogpgt(self, x):
-        valid = (x>self.B[0,:]).all(1)&(x<self.B[1,:]).all(1)
-        t = -(x@self.invSigma)*valid[:,None]
+        maxd = 1e10
+        below = x < self.B[0,:]
+        above = x > self.B[1,:]
+        inbounds = (~below)*(~above)
+        t = -(x@self.invSigma)*inbounds + below*maxd - above*maxd
         return t
     def _k_rbf(self, x):
         pairwise_dists = squareform(pdist(x))**2
@@ -90,8 +93,7 @@ class GTGS(object):
         Kxy = exp(-pairwise_dists/(2*h**2))
         dxkxy = -Kxy@x
         sumkxy = Kxy.sum(1)
-        for i in range(self.d):
-            dxkxy[:,i] = dxkxy[:,i]+x[:,i]*sumkxy
+        dxkxy += x*sumkxy[:,None]
         dxkxy = dxkxy/(h**2)
         return Kxy,dxkxy 
     def walk(self, steps):
@@ -99,7 +101,7 @@ class GTGS(object):
             lnpgrad = self._dlogpgt(self.x)
             kxy,dxkxy = self._k_rbf(self.x)  
             grad = ((kxy@lnpgrad)+dxkxy)/self.n  
-            if self.iter== 0:
+            if self.iter==0:
                 self.hgrad = self.hgrad+grad**2
             else:
                 self.hgrad = self.alpha*self.hgrad+(1-self.alpha)*(grad**2)

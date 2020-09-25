@@ -2,6 +2,7 @@ from vitruncate import GTGS,trunc_gen
 from qmcpy import Sobol
 from numpy import *
 from numpy.linalg import inv
+set_printoptions(formatter={'float': lambda x: "{0:5.2f}".format(x)})
 from scipy import stats
 from matplotlib import pyplot
 
@@ -73,38 +74,45 @@ def plt_non_std_gt():
 
 def plt_gtgs():
     # parameters
+    n = 2**9
+    d = 2
     mu = array([1,2],dtype=float)
-    Sigma = array([[9,4],[4,5]],dtype=float)
-    #L = array([-4,-3],dtype=float)
-    #U = array([6,6],dtype=float)
-    L = array([-inf,-inf],dtype=float)
-    U = array([inf,inf],dtype=float)
+    Sigma = array([[5,4],[4,9]],dtype=float)
+    L = array([-4,-3],dtype=float)
+    U = array([6,6],dtype=float)
+    #L = array([-inf,-inf],dtype=float)
+    #U = array([inf,inf],dtype=float)
     epsilon = 1e-2
-    walk1 = 500
-    walk2 = 500
+    steps = 100
     # points
     #    1
     evals,evecs = linalg.eigh(Sigma)
     order = argsort(-evals)
     A = dot(evecs[:,order],diag(sqrt(evals[order]))).T
     s = Sobol(2,seed=7)
-    u = s.gen_samples(2**8)
-    x = stats.norm.ppf(u)@A+mu
+    u = s.gen_samples(n)
+    x_true = stats.norm.ppf(u)@A+mu
+    x_cut = x_true[(x_true>L).all(1)&(x_true<U).all(1)]
     #    2
-    gtgs = GTGS(2**8,2,mu,Sigma,L,U,epsilon)
+    gtgs = GTGS(n,d,mu,Sigma,L,U,epsilon)
     x_init = gtgs.get_val()
     #    3
-    xw1 = gtgs.walk(walk1)
-    print('Walk 1 mean:',xw1.mean(0))
-    #    4
-    xw2 = gtgs.walk(walk2)
-    print('Walk 2 mean:',xw2.mean(0))
+    x = gtgs.walk(steps)
+    print('mu')
+    print('\ttrue:   ',mu)
+    print('\tCUT:    ',x_cut.mean(0))
+    print('\tVITRUNC:',x.mean(0))
+    print('Sigma')
+    print('\ttrue:   ',Sigma.flatten())
+    print('\tCUT:    ',cov(x_cut.T).flatten())
+    print('\tVITRUNC:',cov(x.T).flatten())
+    print('Points out of bounds:',((x>L).all(1)&(x<U).all(1)).sum()-n)
     # plots
-    fig,ax = pyplot.subplots(nrows=1,ncols=4,figsize=(25,5))
-    scat_plot(x,ax[0],[-7,9],[-5,9],s=10,color='b',title="Sample of Points Before Truncation")
-    scat_plot(x_init,ax[1],[-7,9],[-5,9],s=10,color='b',title="Initial Points for Stein Method",pltbds=True,lb=L,ub=U)
-    scat_plot(xw1,ax[2],[-7,9],[-5,9],s=10,color='b',title="Points After %d Iterations"%walk2,pltbds=True,lb=L,ub=U)
-    scat_plot(xw2,ax[3],[-7,9],[-5,9],s=10,color='b',title="Points After Another %d Iterations"%walk2,pltbds=True,lb=L,ub=U)
+    fig,ax = pyplot.subplots(nrows=2,ncols=2,figsize=(15,15))
+    scat_plot(x_true,ax[0,0],[-7,9],[-5,9],s=10,color='b',title="Sample of Points Before Truncation")
+    scat_plot(x_cut,ax[0,1],[-7,9],[-5,9],s=10,color='b',title="Sample of Points with Cut Truncation",pltbds=True,lb=L,ub=U)
+    scat_plot(x_init,ax[1,0],[-7,9],[-5,9],s=10,color='b',title="Initial Points for Stein Method",pltbds=True,lb=L,ub=U)
+    scat_plot(x,ax[1,1],[-7,9],[-5,9],s=10,color='b',title="Points After %d Iterations"%steps,pltbds=True,lb=L,ub=U)
 
 if __name__ == '__main__':
     #plt_sobol()
