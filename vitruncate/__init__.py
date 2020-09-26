@@ -1,1 +1,1 @@
-from .gtgs import GTGS
+from .gt import GT

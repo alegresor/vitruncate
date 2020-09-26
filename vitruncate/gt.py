@@ -3,7 +3,7 @@ from numpy.linalg import *
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import norm
         
-class GTGS(object):
+class GT(object):
     """
     Gaussian Truncated Distribution Generator by Stein Method.
     Code adapted from: https://github.com/DartML/Stein-Variational-Gradient-Descent/blob/master/python/svgd.py
@@ -48,13 +48,13 @@ class GTGS(object):
         random.seed(self.seed)
         if self.itype == 'SOBOL':
             from qmcpy import Sobol
-            return Sobol(self.d,seed=self.seed).gen_samples(n) # Sobol' samples from QMCPy. Could be replaced with IID samples
+            return Sobol(self.d,seed=self.seed,graycode=True).gen_samples(n) # Sobol' samples from QMCPy. Could be replaced with IID samples
         elif self.itype == 'IID':
             return random.rand(n,self.d)
         else:
             raise Exception('init_type should be "Sobol" or "IID"')
     def _dlogpgt(self, x):
-        maxd = 1e10
+        maxd = 1e15
         below = x < self.B[0,:]
         above = x > self.B[1,:]
         inbounds = (~below)*(~above)
@@ -74,7 +74,7 @@ class GTGS(object):
         """
         Update the samples. 
         If the dimensions are independent (covariance matrix is a diagnol matrix), 
-        then there is no need to update samples, just call `obj.get_val` to return exact samples
+        then there is no need to update samples, can just return samples directly
 
         Args:
             steps (int): number of iterations
@@ -85,22 +85,27 @@ class GTGS(object):
             ndarray: n x d array of samples mimicking the truncated distribuiton after taking another s steps
         """
         if self.independent:
-            msg = 'Dimensions are independent --> no need to update samples --> call ojb.get_val() to return exact samples'
-            warnings.warn(msg)
-            return self.get_val()
+            from warnings import warn
+            msg = 'Dimensions are independent --> no need to update samples --> return exact samples'
+            warn(msg)
+            return self._scale_x(self.x)
         for i in range(steps):
             lnpgrad = self._dlogpgt(self.x)
             kxy,dxkxy = self._k_rbf(self.x)  
             grad = ((kxy@lnpgrad)+dxkxy)/self.n  
             if self.iter==0:
-                self.hgrad = self.hgrad+grad**2
+                self.hgrad += grad**2
             else:
                 self.hgrad = alpha*self.hgrad+(1-alpha)*(grad**2)
             adj_grad = grad/(self.fudge+sqrt(self.hgrad))
             self.x += epsilon*adj_grad 
             self.iter += 1
         return self._scale_x(self.x)
-    def _scale_x(self,x):
+    def reset(self):
+        self.iter = 0
+        self.x = self.x_init
+        self.hgrad = zeros((self.n,self.d),dtype=float)
+    def _scale_x(self, x):
         return x*sqrt(self.sn)+self.mu.T
     def _get_cut_trunc(self, n_cut):
         x_stdu = self._get_stdu_pts(n_cut)
@@ -111,7 +116,6 @@ class GTGS(object):
         x_cut = x_ut[(x_ut>self.L).all(1)&(x_ut<self.U).all(1)]
         return x_ut,x_cut
     def get_metrics(self, gn, gnt, verbose=True):
-        x_init = self._scale_x(self.x_init)
         x = self._scale_x(self.x)
         data = {
             'mu':{
@@ -119,16 +123,16 @@ class GTGS(object):
                 'CUT': gnt.mean(0),
                 'VITRUNC':x.mean(0)},
             'Sigma':{
-                'TRUE': self.Sigma.flatten(),
-                'CUT': cov(gnt.T).flatten(),
-                'VITRUNC':cov(x.T).flatten()}}
+                'TRUE': self.Sigma,
+                'CUT': cov(gnt.T),
+                'VITRUNC':cov(x.T)}}
         nOB = self.n-((x>self.L).all(1)&(x<self.U).all(1)).sum()
         if verbose:
             set_printoptions(formatter={'float': lambda x: "{0:5.2f}".format(x)})
             for param,dd in data.items():
                 print(param)
                 for s,d in dd.items():
-                    print('%15s: %s'%(s,str(d)))
+                    print('%15s: %s'%(s,str(d.flatten())))
             print('Points out of bounds:',nOB)
         return data,nOB
     def plot(self, out=None, show=False):
@@ -174,16 +178,16 @@ class GTGS(object):
             ax.axvline(x=ub[0], color='k', linestyle='--')
 
 if __name__ == '__main__':
-    gt = GTGS(
+    gt = GT(
         n = 2**8, 
         d = 2,
         mu = [1,2], 
-        Sigma = [[5,4],[4,9]], 
+        Sigma = [[5,4],[4,9]], # [[5,0],[0,9]]
         L = [-4,-3], 
         U = [6,6], 
-        init_type = 'Sobol',
+        init_type = 'IID',
         seed = None)
-    gt.update(steps=100, epsilon=5e-3, alpha=.5)
+    gt.update(steps=5000, epsilon=5e-3, alpha=.5)
     gt.plot(out='_ags.png', show=False)
     gn,gnt = gt._get_cut_trunc(2**20)
     gt.get_metrics(gn, gnt, verbose=True)
