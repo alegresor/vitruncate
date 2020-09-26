@@ -31,16 +31,9 @@ class GTGS(object):
         self.L = array(L).flatten()
         self.U = array(U).flatten()
         self.B = (vstack((self.L,self.U))-self.mu.T)/sqrt(self.sn) # 2 x d array of bounds
+        self.seed = seed
         self.itype = init_type.upper()
-        # initial samples
-        random.seed(seed)
-        if self.itype == 'SOBOL':
-            from qmcpy import Sobol
-            self.x_stdu = Sobol(self.d,seed=seed).gen_samples(self.n) # Sobol' samples from QMCPy. Could be replaced with IID samples
-        elif self.itype == 'IID':
-            self.x_stdu = random.rand(self.n,self.d)
-        else:
-            raise Exception('init_type should be "Sobol" or "IID"')
+        self.x_stdu = self._get_stdu_pts(self.n)  
         self.x_init = zeros((self.n,self.d),dtype=float)
         for j in range(self.d):
             std = sqrt(self.Sigma_s[j,j])
@@ -51,6 +44,15 @@ class GTGS(object):
         self.fudge = 1e-6
         self.iter = 0
         self.hgrad = zeros((self.n,self.d),dtype=float)
+    def _get_stdu_pts(self, n):
+        random.seed(self.seed)
+        if self.itype == 'SOBOL':
+            from qmcpy import Sobol
+            return Sobol(self.d,seed=self.seed).gen_samples(n) # Sobol' samples from QMCPy. Could be replaced with IID samples
+        elif self.itype == 'IID':
+            return random.rand(n,self.d)
+        else:
+            raise Exception('init_type should be "Sobol" or "IID"')
     def _dlogpgt(self, x):
         maxd = 1e10
         below = x < self.B[0,:]
@@ -100,14 +102,36 @@ class GTGS(object):
         return self._scale_x(self.x)
     def _scale_x(self,x):
         return x*sqrt(self.sn)+self.mu.T
-    def _get_naive_untrunc(self):
+    def _get_cut_trunc(self, n_cut):
+        x_stdu = self._get_stdu_pts(n_cut)
         evals,evecs = eigh(self.Sigma)
         order = argsort(-evals)
         A = dot(evecs[:,order],diag(sqrt(evals[order]))).T
-        x_ut = norm.ppf(self.x_stdu)@A+self.mu.T
+        x_ut = norm.ppf(x_stdu)@A+self.mu.T
         x_cut = x_ut[(x_ut>self.L).all(1)&(x_ut<self.U).all(1)]
         return x_ut,x_cut
-    def plot(self, verbose=True, out=None, show=False):
+    def get_metrics(self, gn, gnt, verbose=True):
+        x_init = self._scale_x(self.x_init)
+        x = self._scale_x(self.x)
+        data = {
+            'mu':{
+                'TRUE': self.mu.flatten(),
+                'CUT': gnt.mean(0),
+                'VITRUNC':x.mean(0)},
+            'Sigma':{
+                'TRUE': self.Sigma.flatten(),
+                'CUT': cov(gnt.T).flatten(),
+                'VITRUNC':cov(x.T).flatten()}}
+        nOB = self.n-((x>self.L).all(1)&(x<self.U).all(1)).sum()
+        if verbose:
+            set_printoptions(formatter={'float': lambda x: "{0:5.2f}".format(x)})
+            for param,dd in data.items():
+                print(param)
+                for s,d in dd.items():
+                    print('%15s: %s'%(s,str(d)))
+            print('Points out of bounds:',nOB)
+        return data,nOB
+    def plot(self, out=None, show=False):
         if self.d != 2: 
             msg = "`GTGS.plot` method only applicable when d=2"
             raise Exception(msg)
@@ -120,10 +144,10 @@ class GTGS(object):
         pyplot.rc('legend', fontsize=16)
         pyplot.rc('figure', titlesize=16)
         # points
-        gn,gnt = self._get_naive_untrunc()
+        gn,gnt = self._get_cut_trunc(self.n)
         x_init = self._scale_x(self.x_init)
         x = self._scale_x(self.x)
-        # other parasm
+        # other params
         dpb0 = array([self.L[0]-2,self.U[0]+2])
         dpb1 = array([self.L[1]-2,self.U[1]+2])
         # plots
@@ -132,17 +156,6 @@ class GTGS(object):
         self._plot_help(gnt,ax[0,1],dpb0,dpb1,s=10,color='b',title="Points with Cut Truncation",pltbds=True,lb=self.L,ub=self.U)
         self._plot_help(x_init,ax[1,0],dpb0,dpb1,s=10,color='b',title="Initial Points",pltbds=True,lb=self.L,ub=self.U)
         self._plot_help(x,ax[1,1],dpb0,dpb1,s=10,color='b',title="Final Points",pltbds=True,lb=self.L,ub=self.U)
-        if verbose:
-            set_printoptions(formatter={'float': lambda x: "{0:5.2f}".format(x)})
-            print('mu')
-            print('\ttrue:   ',self.mu.flatten())
-            print('\tCUT:    ',gnt.mean(0))
-            print('\tVITRUNC:',x.mean(0))
-            print('Sigma')
-            print('\ttrue:   ',self.Sigma.flatten())
-            print('\tCUT:    ',cov(gnt.T).flatten())
-            print('\tVITRUNC:',cov(x.T).flatten())
-            print('Points out of bounds:',self.n-((x>self.L).all(1)&(x<self.U).all(1)).sum())
         if out:
             pyplot.savefig(out,dpi=250)
         if show:
@@ -160,3 +173,17 @@ class GTGS(object):
             ax.axvline(x=lb[0], color='k', linestyle='--')
             ax.axvline(x=ub[0], color='k', linestyle='--')
 
+if __name__ == '__main__':
+    gt = GTGS(
+        n = 2**8, 
+        d = 2,
+        mu = [1,2], 
+        Sigma = [[5,4],[4,9]], 
+        L = [-4,-3], 
+        U = [6,6], 
+        init_type = 'Sobol',
+        seed = None)
+    gt.update(steps=100, epsilon=5e-3, alpha=.5)
+    gt.plot(out='_ags.png', show=False)
+    gn,gnt = gt._get_cut_trunc(2**20)
+    gt.get_metrics(gn, gnt, verbose=True)
