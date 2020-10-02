@@ -187,7 +187,7 @@ if __name__ == '__main__':
         U = [6,6], 
         init_type = 'IID',
         seed = None)
-    gt.update(steps=5000, epsilon=5e-3, alpha=.5)
-    gt.plot(out='_ags.png', show=False)
+    gt.update(steps=500, epsilon=5e-3, alpha=.5)
+    #gt.plot(out='_ags.png', show=False)
     gn,gnt = gt._get_cut_trunc(2**20)
     gt.get_metrics(gn, gnt, verbose=True)
