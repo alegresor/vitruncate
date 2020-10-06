@@ -18,9 +18,9 @@ $$\nabla_{\boldsymbol{x}}k(\boldsymbol{x},\boldsymbol{z})=\frac{2}{h}k(\boldsymb
 Also assume we want to generate from a truncated multi-variate Gaussian. Letting C be a normalizaiton constant, $(\boldsymbol{L},\boldsymbol{U})$ lower and upper bounds respectively, and $\chi$ the indicator function, then the truncated density is  
 $$p(\boldsymbol{x}|\boldsymbol{\mu},\boldsymbol{\Sigma},\boldsymbol{L},\boldsymbol{U})=C(2\pi)^{-d/2}\det(\boldsymbol{\Sigma})^{-1/2}\exp(-(\boldsymbol{x}-\boldsymbol{\mu})^T\boldsymbol{\Sigma}^{-1}(\boldsymbol{x}-\boldsymbol{\mu})/2)\chi_{(\boldsymbol{L},\boldsymbol{U})}(\boldsymbol{x}),$$
 the $\log$ density is
-$$\log(p(\boldsymbol{x}|\boldsymbol{\mu},\boldsymbol{\Sigma},\boldsymbol{L},\boldsymbol{U}))=\left(log(C)-\frac{d}{2}\log(2\pi)-\frac{1}{2}\log(\det(\boldsymbol{\Sigma})) - \frac{1}{2}(\boldsymbol{x}-\boldsymbol{\mu})^T\boldsymbol{\Sigma}^{-1}(\boldsymbol{x}-\boldsymbol{\mu})\right)\chi_{(\boldsymbol{L},\boldsymbol{U})},$$
+$$\log(p(\boldsymbol{x}|\boldsymbol{\mu},\boldsymbol{\Sigma},\boldsymbol{L},\boldsymbol{U}))=\left(log(C)-\frac{d}{2}\log(2\pi)-\frac{1}{2}\log(\det(\boldsymbol{\Sigma})) - \frac{1}{2}(\boldsymbol{x}-\boldsymbol{\mu})^T\boldsymbol{\Sigma}^{-1}(\boldsymbol{x}-\boldsymbol{\mu})+\log(\chi_{(\boldsymbol{L},\boldsymbol{U})}(\boldsymbol{x}))\right),$$
 and the gradient of the log density is 
-$$\nabla_{\boldsymbol{x_j}} \log(p(\boldsymbol{x}|\boldsymbol{\mu},\boldsymbol{\Sigma},\boldsymbol{L},\boldsymbol{U})) = \left(\boldsymbol{\mu}^T\boldsymbol{\Sigma}^{-1} -\boldsymbol{x}^T\boldsymbol{\Sigma}^{-1}\right)\chi_{(\boldsymbol{L},\boldsymbol{U})}.$$
+$$\nabla_{\boldsymbol{x_j}} \log(p(\boldsymbol{x}|\boldsymbol{\mu},\boldsymbol{\Sigma},\boldsymbol{L},\boldsymbol{U})) = \left(\boldsymbol{\mu}^T\boldsymbol{\Sigma}^{-1} -\boldsymbol{x}^T\boldsymbol{\Sigma}^{-1}\right)+\infty\,\chi_{(\boldsymbol{-\infty},\boldsymbol{L})}(\boldsymbol{x})-\infty\,\chi_{(\boldsymbol{U},\boldsymbol{\infty})}(\boldsymbol{x}).$$
 
 We can then update the particles such that
 $$x \leftarrow x+\epsilon\hat{\phi}^*(\boldsymbol{x})$$
