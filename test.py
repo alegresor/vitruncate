@@ -1,8 +1,8 @@
 from vitruncate import GT
 from numpy import *
 
-def test(gt, strides, trials, n_cut, epsilon, alpha):
-    error = lambda p,p_hat: abs(p.flatten()-p_hat.flatten()).mean() # abs error
+def test(gt, strides, trials, n_cut, epsilon, eta):
+    error = lambda p,p_hat: ((p.flatten()-p_hat.flatten())**2).mean() # abs error
     gn,gnt = gt._get_cut_trunc(n_cut)
     mu_errors = zeros((trials,len(strides)),dtype=float)
     Sigma_errors = zeros((trials,len(strides)),dtype=float)
@@ -12,7 +12,7 @@ def test(gt, strides, trials, n_cut, epsilon, alpha):
         gt.reset()
         for s in range(len(strides)):
             if (s+1)%10==0: print('\tStride #',s+1)
-            gt.update(strides[s],epsilon,alpha)
+            gt.update(strides[s],epsilon,eta)
             data,nOB = gt.get_metrics(gn,gnt,verbose=False)
             mu_errors[t,s] = error(data['mu']['CUT'],data['mu']['VITRUNC'])
             Sigma_errors[t,s] = error(data['Sigma']['CUT'],data['Sigma']['VITRUNC'])
@@ -35,13 +35,15 @@ if __name__ == '__main__':
         U = [6,6], 
         init_type = 'Sobol',
         seed = None)
-    df = test(gt, strides=tile(5,30), trials=10, n_cut=2**22, epsilon=5e-3, alpha=.5)
+    df = test(gt, strides=tile(5,50), trials=5, n_cut=2**22, epsilon=5e-3, eta=.5)
     print(df)
     df.to_csv('out/test.csv')
     from matplotlib import pyplot
     fig,ax = pyplot.subplots()
-    ax.plot(df['steps'],df['mu_error'],color='b',label='$\mu$ error')
-    ax.plot(df['steps'],df['Sigma_error'],color='g',label='$\Sigma$ error')
+    ax.plot(df['steps'],df['mu_error'],color='b',label='$\mu$')
+    ax.plot(df['steps'],df['Sigma_error'],color='g',label='$\Sigma$ ')
     ax.legend()
-    pyplot.show()
+    ax.set_xlabel('steps')
+    ax.set_ylabel('RMSE')
     pyplot.savefig('out/convergence.png',dpi=250)
+    pyplot.show()

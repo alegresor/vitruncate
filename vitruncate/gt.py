@@ -1,7 +1,8 @@
 from numpy import *
 from numpy.linalg import *
 from scipy.spatial.distance import pdist, squareform
-from scipy.stats import norm
+from scipy.stats import multivariate_normal as mvn, norm
+from math import comb
         
 class GT(object):
     """
@@ -22,28 +23,31 @@ class GT(object):
         """
         self.n = n
         self.d = d
-        self.mu = array(mu,dtype=float)[:,None]
-        self.Sigma = array(Sigma,dtype=float)
-        self.independent = (self.Sigma==(self.Sigma*eye(self.d))).all()
-        self.sn = det(self.Sigma) # normalization factor
-        self.Sigma_s = Sigma/self.sn
-        self.invSigma = inv(self.Sigma_s)
         self.L = array(L).flatten()
         self.U = array(U).flatten()
-        self.B = (vstack((self.L,self.U))-self.mu.T)/sqrt(self.sn) # 2 x d array of bounds
+        self.mu = array(mu,dtype=float).flatten()
+        self.mut = self.mu - self.mu
+        self.Sigma = array(Sigma,dtype=float)
+        self.independent = (self.Sigma==(self.Sigma*eye(self.d))).all()
+        W = diag(1/(self.U-self.L))
+        self.St = W@self.Sigma@W.T 
+        self.invSt = inv(self.St)
+        self.Lt = (self.L-self.mu)@W
+        self.Ut = (self.U-self.mu)@W
         self.seed = seed
         self.itype = init_type.upper()
         self.x_stdu = self._get_stdu_pts(self.n)  
         self.x_init = zeros((self.n,self.d),dtype=float)
-        for j in range(self.d):
-            std = sqrt(self.Sigma_s[j,j])
-            cdflb = norm.cdf(self.B[0,j],loc=0,scale=std)
-            cdfub = norm.cdf(self.B[1,j],loc=0,scale=std)
-            self.x_init[:,j] = norm.ppf((cdfub-cdflb)*self.x_stdu[:,j]+cdflb,loc=0,scale=std)
-        self.x = self.x_init.copy()
+        std = sqrt(self.St.diagonal())
+        cdflb = norm.cdf(self.Lt,scale=std)
+        cdfub = norm.cdf(self.Ut,scale=std)
+        self.x_init = norm.ppf((cdfub-cdflb)*self.x_stdu+cdflb,scale=std)
         self.fudge = 1e-6
-        self.iter = 0
-        self.hgrad = zeros((self.n,self.d),dtype=float)
+        self.reset()
+        alpha = 1e-5 # expect 1 in every 100k out of bounds
+        G = mvn.cdf(self.Ut,self.mut,self.St) - mvn.cdf(self.Lt,self.mut,self.St)
+        coefs = array([alpha*G/(1-alpha)] + [-comb(d,j)*2**j for j in range(1,self.d+1)], dtype=double)
+        self.beta = real(roots(coefs).max())+1
     def _get_stdu_pts(self, n):
         random.seed(self.seed)
         if self.itype == 'SOBOL':
@@ -54,11 +58,11 @@ class GT(object):
         else:
             raise Exception('init_type should be "Sobol" or "IID"')
     def _dlogpgt(self, x):
-        maxd = 1e15
-        below = x < self.B[0,:]
-        above = x > self.B[1,:]
-        inbounds = (~below)*(~above)
-        t = -(x@self.invSigma)*inbounds + below*maxd - above*maxd
+        ob_low = x < self.Lt
+        ob_high = x > self.Ut
+        ob = (ob_low+ob_high).max(1)
+        ib = (~ob)[:,None]
+        t = -(x@self.invSt)*ib - ob_high*self.beta/(x-self.Ut+1) + ob_low*self.beta/(self.Lt-x+1)
         return t
     def _k_rbf(self, x):
         pairwise_dists = squareform(pdist(x))**2
@@ -70,7 +74,7 @@ class GT(object):
         dxkxy += x*sumkxy[:,None]
         dxkxy = dxkxy/(h**2)
         return Kxy,dxkxy 
-    def update(self, steps=100, epsilon=5e-3, alpha=.5):
+    def update(self, steps=100, epsilon=5e-3, eta=.5):
         """
         Update the samples. 
         If the dimensions are independent (covariance matrix is a diagnol matrix), 
@@ -79,7 +83,7 @@ class GT(object):
         Args:
             steps (int): number of iterations
             epsilon (float): step size
-            alpha (float): momentum hypterparameter for ADA gradient descent
+            eta (float): momentum hypterparameter for ADA gradient descent
         
         Return:
             ndarray: n x d array of samples mimicking the truncated distribuiton after taking another s steps
@@ -96,30 +100,30 @@ class GT(object):
             if self.iter==0:
                 self.hgrad += grad**2
             else:
-                self.hgrad = alpha*self.hgrad+(1-alpha)*(grad**2)
+                self.hgrad = eta*self.hgrad+(1-eta)*(grad**2)
             adj_grad = grad/(self.fudge+sqrt(self.hgrad))
             self.x += epsilon*adj_grad 
             self.iter += 1
         return self._scale_x(self.x)
     def reset(self):
+        self.x = self.x_init.copy()
         self.iter = 0
-        self.x = self.x_init
         self.hgrad = zeros((self.n,self.d),dtype=float)
     def _scale_x(self, x):
-        return x*sqrt(self.sn)+self.mu.T
+        return x@diag(self.U-self.L) + self.mu
     def _get_cut_trunc(self, n_cut):
         x_stdu = self._get_stdu_pts(n_cut)
         evals,evecs = eigh(self.Sigma)
         order = argsort(-evals)
         A = dot(evecs[:,order],diag(sqrt(evals[order]))).T
-        x_ut = norm.ppf(x_stdu)@A+self.mu.T
+        x_ut = norm.ppf(x_stdu)@A+self.mu
         x_cut = x_ut[(x_ut>self.L).all(1)&(x_ut<self.U).all(1)]
         return x_ut,x_cut
     def get_metrics(self, gn, gnt, verbose=True):
         x = self._scale_x(self.x)
         data = {
             'mu':{
-                'TRUE': self.mu.flatten(),
+                'TRUE': self.mu,
                 'CUT': gnt.mean(0),
                 'VITRUNC':x.mean(0)},
             'Sigma':{
@@ -187,7 +191,7 @@ if __name__ == '__main__':
         U = [6,6], 
         init_type = 'IID',
         seed = None)
-    gt.update(steps=500, epsilon=5e-3, alpha=.5)
-    #gt.plot(out='_ags.png', show=False)
+    gt.update(steps=100, epsilon=5e-3, eta=.9)
+    gt.plot(out='_ags.png', show=False)
     gn,gnt = gt._get_cut_trunc(2**20)
     gt.get_metrics(gn, gnt, verbose=True)
