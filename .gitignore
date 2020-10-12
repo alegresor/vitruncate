@@ -4,3 +4,4 @@ _ags*
 *.pyc
 *settings.json
 Stein-Variational-Gradient-Descent/*
+*.png
