@@ -9,7 +9,7 @@ class GT(object):
     Gaussian Truncated Distribution Generator by Stein Method.
     Code adapted from: https://github.com/DartML/Stein-Variational-Gradient-Descent/blob/master/python/svgd.py
     """
-    def __init__(self, n, d, mu, Sigma, L, U, init_type='IID', seed=None):
+    def __init__(self, n, d, mu, Sigma, L, U, init_type='IID', seed=None, n_block=None):
         """
         Args:
             n (int): number of samples
@@ -20,6 +20,7 @@ class GT(object):
             U (ndarray): length d vector of upper bounds
             init_type (str): "Sobol" or "IID" point initialization size
             seed (int): seed for reproducibility
+            n_block (int): number of samples in a computation block.
         """
         self.n = n
         self.d = d
@@ -35,7 +36,11 @@ class GT(object):
         self.Lt = (self.L-self.mu)@W
         self.Ut = (self.U-self.mu)@W
         self.seed = seed
+        self.n_block = n_block if n_block else self.n
+        self.blocks = int(floor(self.n/self.n_block))
         self.itype = init_type.upper()
+        if self.n<2 or self.n_block<2 or self.d<1:
+            raise Exception("n and n_block must be >=2 and d must be >0.")
         self.x_stdu = self._get_stdu_pts(self.n)  
         self.x_init = zeros((self.n,self.d),dtype=float)
         std = sqrt(self.St.diagonal())
@@ -93,17 +98,31 @@ class GT(object):
             msg = 'Dimensions are independent --> no need to update samples --> return exact samples'
             warn(msg)
             return self._scale_x(self.x)
-        for i in range(steps):
-            lnpgrad = self._dlogpgt(self.x)
-            kxy,dxkxy = self._k_rbf(self.x)  
-            grad = ((kxy@lnpgrad)+dxkxy)/self.n  
-            if self.iter==0:
-                self.hgrad += grad**2
-            else:
-                self.hgrad = eta*self.hgrad+(1-eta)*(grad**2)
-            adj_grad = grad/(self.fudge+sqrt(self.hgrad))
-            self.x += epsilon*adj_grad 
-            self.iter += 1
+        for b in range(self.blocks):
+            i = b*self.n_block
+            if b < (self.blocks-1):
+                x = self.x[i:i+self.n_block]
+                hgrad = self.hgrad[i:i+self.n_block]
+                nb = self.n_block
+            else: # last block, may have more than self.n_block samples
+                x = self.x[i:]
+                hgrad = self.hgrad[i:]
+                nb = x.shape[0]
+            for s in range(steps):
+                ts = s + self.iter # total steps
+                lnpgrad = self._dlogpgt(x)
+                kxy,dxkxy = self._k_rbf(x)  
+                grad = ((kxy@lnpgrad)+dxkxy)/nb  
+                if ts==0:
+                    hgrad += grad**2
+                else:
+                    hgrad = eta*hgrad+(1-eta)*(grad**2)
+                adj_grad = grad/(self.fudge+sqrt(hgrad))
+                x += epsilon*adj_grad 
+                self.iter += 1
+            self.x[i:i+nb] = x
+            self.hgrad[i:i+nb] = hgrad
+        self.iter += steps
         return self._scale_x(self.x)
     def reset(self):
         self.x = self.x_init.copy()
@@ -183,14 +202,15 @@ class GT(object):
 
 if __name__ == '__main__':
     gt = GT(
-        n = 2**8, 
+        n = 2**8+3, 
         d = 2,
         mu = [1,2], 
-        Sigma = [[5,4],[4,9]], # [[5,0],[0,9]]
+        Sigma = [[5,4],[4,9]], #[[5,0],[0,9]] 
         L = [-4,-3], 
         U = [6,6], 
-        init_type = 'IID',
-        seed = None)
+        init_type = 'Sobol',
+        seed = None,
+        n_block = 2**6)
     gt.update(steps=100, epsilon=5e-3, eta=.9)
     gt.plot(out='_ags.png', show=False)
     gn,gnt = gt._get_cut_trunc(2**20)

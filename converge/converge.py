@@ -34,7 +34,8 @@ if __name__ == '__main__':
         L = [0,-2,4],#[-4,-3], 
         U = [2,5,6],#[6,6], 
         init_type = 'Sobol',
-        seed = None)
+        seed = None,
+        n_block = 2**7)
     df = test(gt, strides=tile(5,50), trials=5, n_cut=2**22, epsilon=5e-3, eta=.5)
     print(df)
     df.to_csv('converge/converge.csv')
