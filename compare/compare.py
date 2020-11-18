@@ -2,7 +2,7 @@ from vitruncate import GT
 from numpy import *
 from time import time
 
-for n in [100000]:#[10000,100000]:
+for n in [10000,100000]:
     t0 = time()
     gt = GT(
         n = n, 
@@ -16,3 +16,9 @@ for n in [100000]:#[10000,100000]:
         n_block = 200)
     gt.update(steps=50, epsilon=5e-3, eta=.9)
     print('%10d samples time: %.2f'%(n,time()-t0))
+
+# current best:
+"""
+ 10000 samples time: 2.30
+100000 samples time: 24.93
+"""

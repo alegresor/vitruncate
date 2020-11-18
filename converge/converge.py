@@ -13,7 +13,7 @@ def test(gt, strides, trials, n_cut, epsilon, eta):
         for s in range(len(strides)):
             if (s+1)%10==0: print('\tStride #',s+1)
             gt.update(strides[s],epsilon,eta)
-            data,nOB = gt.get_metrics(gn,gnt,verbose=False)
+            data,nOB,mass_lost = gt.get_metrics(gn,gnt,verbose=False)
             mu_errors[t,s] = error(data['mu']['CUT'],data['mu']['VITRUNC'])
             Sigma_errors[t,s] = error(data['Sigma']['CUT'],data['Sigma']['VITRUNC'])
             nOBs[t,s] = nOB
@@ -27,7 +27,7 @@ def test(gt, strides, trials, n_cut, epsilon, eta):
 
 if __name__ == '__main__':
     gt = GT(
-        n = 2**8, 
+        n = 2**9, 
         d = 3,
         mu = [1,2,3],#[1,2], 
         Sigma = [[5,4,3],[4,8,6],[3,6,9]],#[[5,4],[4,9]], 
@@ -35,7 +35,7 @@ if __name__ == '__main__':
         U = [2,5,6],#[6,6], 
         init_type = 'Sobol',
         seed = None,
-        n_block = 2**7)
+        n_block = 2**9)
     df = test(gt, strides=tile(5,50), trials=5, n_cut=2**22, epsilon=5e-3, eta=.5)
     print(df)
     df.to_csv('converge/converge.csv')
