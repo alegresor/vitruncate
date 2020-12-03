@@ -1,4 +1,6 @@
+from vitruncate import GT
 from numpy import *
+import matplotlib
 from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.patches as patches
@@ -94,7 +96,57 @@ def plot_square_ext():
     pyplot.tight_layout()
     pyplot.savefig('paper/figs/square_ext.png',dpi=250)
 
+def heatmap():
+    # params
+    L = [-2,-4]
+    U = [4,5]
+    n_mesh = 100
+    pdelta = 1
+    xlim = [L[0]-pdelta,U[0]+pdelta]
+    ylim = [L[1]-pdelta,U[1]+pdelta]
+    # generate points
+    gt = GT(
+        n = 2**8, 
+        d = 2,
+        mu = [1,2], 
+        Sigma = [[5,4],[4,9]], #[[5,0],[0,9]],
+        L = L, 
+        U = U, 
+        init_type = 'Sobol',
+        seed = None,
+        n_block = None,
+        alpha=.1)
+    x = gt.update(steps=1000, epsilon=5e-3, eta=.9)
+    # evaluate meshgrid for pdf contour
+    mesh = zeros(((n_mesh)**2,3),dtype=float)
+    x_grid_tics = linspace(xlim[0],xlim[1],n_mesh)
+    y_grid_tics = linspace(ylim[0],ylim[1],n_mesh)
+    x_mesh,y_mesh = meshgrid(x_grid_tics,y_grid_tics)
+    mesh[:,0] = x_mesh.flatten()
+    mesh[:,1] = y_mesh.flatten()
+    mesh[:,2] = log2(gt._pdf(mesh[:,:2]))
+    z_mesh = mesh[:,2].reshape((n_mesh,n_mesh))
+    # plots
+    fig,ax = pyplot.subplots(figsize=(5,5))
+    #   colors 
+    clevel = linspace(mesh[:,2].min(),mesh[:,2].max(),100)
+    cmap = pyplot.get_cmap('GnBu') # https://matplotlib.org/tutorials/colors/colormaps.html
+    #cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", [(.95,.95,.95),(0,0,1)])
+    #   contours
+    ax.contourf(x_mesh,y_mesh,z_mesh,clevel,cmap=cmap,extend='both')
+    #ax.contour(x_mesh,y_mesh,z_mesh,levels=[-50,-30,-10,-1])
+    #   scatter plot 
+    ax.scatter(x[:,0],x[:,1],s=5,color='w')
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+    ax.set_xticks([xlim[0],L[0],U[0],xlim[1]])
+    ax.set_yticks([ylim[0],L[1],U[1],ylim[1]])
+    ax.set_title(r'Density Log Contour with $\alpha$=.1')
+    # output
+    pyplot.savefig('paper/figs/heatmap.png',dpi=250) 
+
 if __name__ == '__main__':
-    plot_pdf()
+    #plot_pdf()
     #plot_cub_ext()
-    plot_square_ext()
+    #plot_square_ext()
+    heatmap()

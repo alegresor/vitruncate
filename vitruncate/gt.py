@@ -11,7 +11,7 @@ class GT(object):
     Gaussian Truncated Distribution Generator by Stein Method.
     Code adapted from: https://github.com/DartML/Stein-Variational-Gradient-Descent/blob/master/python/svgd.py
     """
-    def __init__(self, n, d, mu, Sigma, L, U, init_type='IID', seed=None, n_block=None, alpha_r=1e-5):
+    def __init__(self, n, d, mu, Sigma, L, U, init_type='IID', seed=None, n_block=None, alpha=1e-4):
         """
         Args:
             n (int): number of samples
@@ -23,7 +23,7 @@ class GT(object):
             init_type (str): "Sobol" or "IID" point initialization size
             seed (int): seed for reproducibility
             n_block (int): number of samples in a computation block.
-            alpha_r (float): percentage of mass acceptable to discard when forcing finite bounds.
+            alpha (float): fraction of mass out of bounds. 
         """
         self.n = n
         self.d = d
@@ -34,7 +34,7 @@ class GT(object):
         self.itype = init_type.upper()
         self.seed = seed
         self.n_block = n_block if n_block else self.n
-        self.alpha_r = alpha_r 
+        self.alpha = alpha
         self.L_hat,self.U_hat = self._rebound()
         self.mut = self.mu - self.mu
         self.independent = (self.Sigma==(self.Sigma*eye(self.d))).all()
@@ -56,10 +56,10 @@ class GT(object):
         self.x_init = norm.ppf((cdfub-cdflb)*self.x_stdu+cdflb,scale=std)
         self.fudge = 1e-6
         self.reset()
-        alpha = 1e-5 # expect 1 in every 100k out of bounds
-        self.g_hat_l,self.g_hat_u = self._approx_mass_qmc(self.L_hat,self.U_hat)
-        coefs = array([alpha*self.g_hat_l/(1-alpha)] + [-comb(d,j)*2**j for j in range(1,self.d+1)], dtype=double)
+        self.g_hat_l,self.g_hat,self.g_hat_u = self._approx_mass_qmc(self.L_hat,self.U_hat)
+        coefs = array([self.alpha*self.g_hat_l/(1-self.alpha)] + [-comb(d,j)*2**j for j in range(1,self.d+1)], dtype=double)
         self.beta = real(roots(coefs).max())+1
+        self.c = self.g_hat/(1-self.alpha)
     def _rebound(self):
         if isfinite(self.L).all() and isfinite(self.U).all():
             return self.L,self.U
@@ -70,13 +70,13 @@ class GT(object):
             L_hat[j] = norm.ppf(eps,loc=self.mu[j],scale=sqrt(self.Sigma[j,j])) if self.L[j]==(-inf) else self.L[j]
             U_hat[j] = norm.ppf(1-eps,loc=self.mu[j],scale=sqrt(self.Sigma[j,j])) if self.U[j]==inf else self.U[j]
         return L_hat,U_hat
-    def _approx_mass_qmc(self,L,U):
+    def _approx_mass_qmc(self, L, U):
         g = Gaussian(Sobol(self.d), self.mu, self.Sigma)
         gpdf = CustomFun(g,lambda x: ((x>=L).all(1)*(x<=U).all(1)).astype(float))
         mass,data = CubQMCSobolG(gpdf, abs_tol=1e-3).integrate()
         mass_l = mass - data.error_bound
         mass_u = mass + data.error_bound  
-        return mass_l,mass_u
+        return mass_l,mass,mass_u
     def _get_stdu_pts(self, n):
         random.seed(self.seed)
         if self.itype == 'SOBOL':
@@ -173,7 +173,7 @@ class GT(object):
                 'CUT': cov(gnt.T),
                 'VITRUNC':cov(x.T)}}
         nOB = self.n-((x>self.L_hat).all(1)&(x<self.U_hat).all(1)).sum()
-        g_l,g_u = self._approx_mass_qmc(self.L,self.U)
+        g_l,g,g_u = self._approx_mass_qmc(self.L,self.U)
         mass_lost = 1-self.g_hat_l/g_l
         if verbose:
             set_printoptions(formatter={'float': lambda x: "{0:5.2f}".format(x)})
@@ -225,6 +225,16 @@ class GT(object):
             ax.axhline(y=ub[1], color='k', linestyle='--')
             ax.axvline(x=lb[0], color='k', linestyle='--')
             ax.axvline(x=ub[0], color='k', linestyle='--')
+    def _pdf(self,x):
+        ibl = (self.L_hat<=x)
+        ibu = (x<=self.U_hat)
+        ib = ibl.all(1) * ibu.all(1)
+        delta = (x-self.mu)
+        iSigma = inv(self.Sigma)
+        rho = ib * (2*pi)**(-self.d/2)*det(self.Sigma)**(-1/2)*exp(-((delta@iSigma)*delta).sum(1)/2)
+        rho += (~ib) * ( (self.L_hat-x+1)**(-self.beta*(~ibl)) * (x-self.U_hat+1)**(-self.beta*(~ibu)) ).prod(1)
+        rho *= self.c
+        return rho
 
 if __name__ == '__main__':
     gt = GT(
@@ -232,8 +242,8 @@ if __name__ == '__main__':
         d = 2,
         mu = [1,2], 
         Sigma = [[5,4],[4,9]], #[[5,0],[0,9]],
-        L = [-4,-inf], 
-        U = [inf,5], 
+        L = [-2,-4], 
+        U = [4,5], 
         init_type = 'Sobol',
         seed = None,
         n_block = None)

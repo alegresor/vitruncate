@@ -1,5 +1,6 @@
 from vitruncate import GT
 from numpy import *
+import pandas as pd
 
 def test(gt, strides, trials, n_cut, epsilon, eta):
     error = lambda p,p_hat: ((p.flatten()-p_hat.flatten())**2).mean() # abs error
@@ -17,8 +18,7 @@ def test(gt, strides, trials, n_cut, epsilon, eta):
             mu_errors[t,s] = error(data['mu']['CUT'],data['mu']['VITRUNC'])
             Sigma_errors[t,s] = error(data['Sigma']['CUT'],data['Sigma']['VITRUNC'])
             nOBs[t,s] = nOB
-    from pandas import DataFrame
-    df = DataFrame({
+    df = pd.DataFrame({
         'steps': cumsum(strides),
         'mu_error': mu_errors.mean(0),
         'Sigma_error': Sigma_errors.mean(0),
@@ -27,22 +27,24 @@ def test(gt, strides, trials, n_cut, epsilon, eta):
 
 if __name__ == '__main__':
     gt = GT(
-        n = 2**9, 
-        d = 3,
-        mu = [1,2,3],#[1,2], 
-        Sigma = [[5,4,3],[4,8,6],[3,6,9]],#[[5,4],[4,9]], 
-        L = [0,-2,4],#[-4,-3], 
-        U = [2,5,6],#[6,6], 
+        n = 2**8, 
+        d = 2,
+        mu = [1,2], 
+        Sigma = [[5,4],[4,9]], 
+        L = [-5,-3], 
+        U = [6,4], 
         init_type = 'Sobol',
-        seed = None,
-        n_block = 2**9)
-    df = test(gt, strides=tile(5,50), trials=5, n_cut=2**22, epsilon=5e-3, eta=.5)
-    print(df)
+        seed = None)
+    df = test(gt, strides=tile(1,50), trials=5, n_cut=2**22, epsilon=5e-3, eta=.5)
     df.to_csv('converge/converge.csv')
+    df = pd.read_csv('converge/converge.csv')
+    print(df)
     from matplotlib import pyplot
     fig,ax = pyplot.subplots()
     ax.plot(df['steps'],df['mu_error'],color='b',label='$\mu$')
     ax.plot(df['steps'],df['Sigma_error'],color='g',label='$\Sigma$ ')
+    ax.set_xlim([df['steps'].min(),df['steps'].max()])
+    ax.set_ylim([0,max(df['mu_error'].max(),df['Sigma_error'].max())])
     ax.legend()
     ax.set_xlabel('steps')
     ax.set_ylabel('RMSE')
