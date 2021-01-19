@@ -5,3 +5,4 @@ _ags*
 *settings.json
 Stein-Variational-Gradient-Descent/*
 *.png
+*.DS_Store
